@@ -1,0 +1,238 @@
+// [*] Changing bricks
+// [*] Odd sized bricks
+// [*] Buying additional bricks
+// [?] Relative orientation
+// work out which way you are when making
+// rotate shifting relative
+// rotate rotating?!??
+// find highlight colour, pref to decide if nothing, only 1st brick or all is highlighted
+//	function determineBrightestColor()
+//	{
+//		%target = "1 1 1 1";
+//		for(%i = 0; %i < 64; %i++)
+//		{
+//			%colori = getColorIdTable(%i);
+//			%dist = vectorDist(%colori, %target);
+//			if(%dist < %best || %best $= "")
+//			{
+//				%best = %dist;
+//				$Duplicator::HighlightColor = %i;
+//			}
+//		}
+//	}
+
+if(isPackage(MacroMaker))
+{
+	deactivatePackage(MacroMaker);
+}
+
+package MacroMaker
+{
+	function execMM()
+	{
+		exec("Add-Ons/Script_MacroMaker/client.cs");
+	}
+
+	function brickRayCast(%start, %end)
+	{
+		// make an array of all bricks dont leur world box is within the box with ray as a diagonal
+		// 
+	}
+
+	function makeMacro(%brick)
+	{
+		if(!isObject(%brick) || %brick.getClassName() !$= "fxDtsBrick")
+		{
+			messageBoxOK("MacroMaker Error", "You must select a brick to create a Macro.");
+			return;
+		}
+		if(isObject($BuildMacroSO))
+			$BuildMacroSO.delete();
+		$BuildMacroSO = new ScriptObject()
+		{
+			class = "BuildMacroSO";
+			numEvents = 2;
+			event0 = "Server\tUseSprayCan\t" @ %brick.getColorID();
+			event1 = "Server\tPlantBrick";
+			brickArray = %brick.getDataBlock();
+			brickRot = %brick.getAngleID();
+			brickPos = %brick.getPosition();
+			brickColor = %brick.getColorID();
+			brickData = %brick.getDataBlock();
+		};
+		%brick.inMacro = 1;
+		for(%i=0;%i<%brick.getNumUpBricks();%i++)
+		{
+			%nextBrick = %brick.getUpBrick(%i);
+			if(!%nextBrick.inMacro)
+				macroAdd(%nextBrick);
+		}
+		for(%i=0;%i<ServerConnection.getCount();%i++)
+		{
+			%obj = ServerConnection.getObject(%i);
+			if(%obj.inMacro)
+			{
+				%obj.inMacro = "";
+				%num++;
+			}
+		}
+		$BuildMacroSO.brickRot = "";
+		$BuildMacroSO.brickPos = "";
+		$BuildMacroSO.brickColor = "";
+		$BuildMacroSO.brickData = "";
+		for(%i=0;%i<10;%i++)
+			$BSD_InvData[%i] = getField($BuildMacroSO.brickArray, %i);
+		BSD_BuyBricks();
+		UseFirstSlot(1);
+		%s = (%num > 1) ? "s" : "";
+		clientCmdCenterPrint("Macro Created: " @ %num @ " brick" @ %s @ ".", 2, 2);
+	}
+
+	function macroAdd(%brick)
+	{
+		%macro = $BuildMacroSO;
+		%brick.inMacro = 1;
+		%datablock = %brick.getDataBlock();
+		if(%brick.getDataBlock() != %macro.brickData)
+		{
+			//for(%i=0;%i<getFieldCount($MacroExtraBrickArray);%i++)
+			//{
+			//	%extraBrick = getField($MacroExtraBrickArray, %i);
+			//	if(%extraBrick == %brick.getDataBlock())
+			//	{
+			//		%slot = %extraBrick;
+			//		break;
+			//	}
+			//}
+			//if(!%slot)
+			//{
+			//	$MacroExtraBricks++;
+			//	if($MacroExtraBricks >= 10)
+			//		$MacroExtraBricks = 0;
+			//	%macro.AddEvent("Server\tBuyBrick\t" @ $MacroExtraBricks TAB %brick.getDataBlock());
+			//	%slot = $MacroExtraBricks;
+			//}
+			%fields = getFieldCount(%macro.brickArray);
+			%slot = -1;
+			for(%i=0;%i<%fields;%i++)
+			{
+				if(getField(%macro.brickArray, %i) == %datablock)
+				{
+					%slot = %i;
+					break;
+				}
+			}
+			if(%slot < 0)
+			{
+				if(%fields >= 10)
+				{
+					// buy bricks or something
+				}
+				else
+				{
+					%slot = %fields;
+					%macro.brickArray = %macro.brickArray TAB %datablock;
+				}
+			}
+			%macro.addEvent("Server\tUseInventory\t" @ %slot);
+			%macro.brickData = %brick.getDataBlock();
+		}
+		%color = %brick.getColorID();
+		if(%color != %macro.brickColor)
+		{
+			%macro.addEvent("Server\tUseSprayCan\t" @ %color);
+			%macro.brickColor = %color;
+		}
+		%angle = %brick.getAngleID();
+		if(%angle != %macro.brickRot)
+		{
+			%change = %angle - %macro.brickRot;
+			if(%change < -2)
+				%macro.addEvent("Server\tRotateBrick\t1");
+			else if(%change > 2)
+				%macro.addEvent("Server\tRotateBrick\t-1");
+			else
+			{
+				if(%change > 0)
+				{
+					while(%change > 0)
+					{
+						%macro.addEvent("Server\tRotateBrick\t1");
+						%change--;
+					}
+				}
+				else
+				{
+					while(%change < 0)
+					{
+						%macro.addEvent("Server\tRotateBrick\t-1");
+						%change++;
+					}
+				}
+			}
+			%macro.brickRot = %angle;
+		}
+		//%tempbrick = new fxDtsBrick(){
+		//	datablock = %brick.getdatablock();
+		//};
+		//%tempbrick.setTransform($MacroPos SPC getwords(%brick.getTransform(), 3, 6));
+		//$MacroPos = %tempbrick.getPosition();
+		//%tempbrick.delete();
+		%position = %brick.getPosition();
+		%poschange = vectorSub(%position, %macro.brickPos);
+		%x = mFloatLength(getWord(%poschange, 0) * 2, 0);
+		%y = mFloatLength(getWord(%poschange, 1) * 2, 0);
+		%z = mFloatLength(getWord(%poschange, 2) * 5, 0);
+		%macro.brickPos = %position;
+		%macro.addEvent("Server\tShiftBrick\t" @ %x TAB %y TAB %z);
+		%macro.addEvent("Server\tPlantBrick");
+		for(%i=0;%i<%brick.getNumUpBricks();%i++)
+		{
+			%nextBrick = %brick.getUpBrick(%i);
+			if(!%nextBrick.inMacro)
+				macroAdd(%nextBrick);
+		}
+		for(%i=0;%i<%brick.getNumDownBricks();%i++)
+		{
+			%nextBrick = %brick.getDownBrick(%i);
+			if(!%nextBrick.inMacro)
+				macroAdd(%nextBrick);
+		}
+	}
+
+	function getPlayerRot()
+	{
+		%player = ServerConnection.getControlObject();
+		return getWord(%player.getTransform(), 6) / 90;
+	}
+
+	function findNearestBrick()
+	{
+		%player = ServerConnection.getControlObject();
+		if(!isObject(%player))
+			return;
+		%position = %player.getPosition();
+		%distance = 100;
+		for(%i=0;%i<ServerConnection.getCount();%i++)
+		{
+			%brick = ServerConnection.getObject(%i);
+			if(%brick.getClassName() !$= "fxDtsBrick")
+				continue;
+			%dist = VectorDist(%brick.getPosition(), %position);
+			if(%dist < %distance)
+			{
+				%distance = %dist;
+				%nearest = %brick;
+			}
+		}
+		if(isObject(%nearest))
+		{
+			%nearest.schedule(1000, "setColor", %nearest.colorID);
+			%nearest.setColor(4);
+			echo(%nearest);
+			return %nearest;
+		}
+		error("No bricks found within 100 units radius");
+	}
+};
+ActivatePackage(MacroMaker);
